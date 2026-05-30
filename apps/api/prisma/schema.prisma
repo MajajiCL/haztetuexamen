@@ -1,0 +1,195 @@
+// =================================================================
+// Prisma Schema — Haztetuexamen.cl
+// =================================================================
+// Modelo de datos compatible con HL7 FHIR R4 + cumplimiento Ley 21.719
+//
+// Dev (local):  SQLite (cero configuración)
+// Prod (VPS):   PostgreSQL con extensión pgcrypto (AES-256 a nivel columna)
+//
+// IMPORTANTE — Para migrar a Postgres:
+//   1. Cambia provider a "postgresql"
+//   2. Descomenta las extensiones pgcrypto/uuid-ossp
+//   3. Actualiza DATABASE_URL en .env.local
+//   4. Corre: npm run prisma:migrate:dev --workspace=@haztetuexamen/api
+// =================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+
+  // --- PRODUCTION (Postgres) ---
+  // provider = "postgresql"
+  // url      = env("DATABASE_URL")
+  // extensions = [pgcrypto, uuidOssp(map: "uuid-ossp")]
+}
+
+// =================================================================
+// Patient — FHIR Patient resource
+// =================================================================
+// PII y datos sensibles deben cifrarse con AES-256 en producción.
+// SQLite no soporta pgcrypto → en dev se almacenan en claro.
+// Postgres production: usar pgp_sym_encrypt() en INSERT, pgp_sym_decrypt() en SELECT.
+model Patient {
+  id           String   @id @default(cuid())
+  rut          String   @unique // En prod: hash + encrypted_rut por separado
+  firstName    String // Encriptado en prod
+  lastName     String // Encriptado en prod
+  birthDate    DateTime
+  gender       String // "male" | "female" | "other" | "unknown"
+  email        String // Encriptado en prod
+  phone        String // Encriptado en prod
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relaciones
+  orders       ServiceRequest[]
+  clinicalNote ClinicalNote[]
+  consents     Consent[]
+
+  @@index([rut])
+  @@index([email])
+}
+
+// =================================================================
+// Practitioner — FHIR Practitioner (médico colaborador)
+// =================================================================
+// Debe estar registrado en RNPI (Superintendencia de Salud). Ley 21.746.
+model Practitioner {
+  id              String   @id @default(cuid())
+  rut             String   @unique
+  rnpiRegistry    String   @unique // Número de registro RNPI
+  firstName       String
+  lastName        String
+  specialty       String
+  signatureSecret String // En prod: cifrado o referencia a KMS
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  // Relaciones
+  serviceRequests ServiceRequest[]
+
+  @@index([rnpiRegistry])
+}
+
+// =================================================================
+// ServiceRequest — FHIR ServiceRequest (orden médica)
+// =================================================================
+// Es el recurso central. Cumple con HL7 FHIR R4 + arancel Fonasa.
+model ServiceRequest {
+  id              String   @id @default(cuid())
+  fhirId          String   @unique // ej. "HTE-LX9P3-A7F2"
+  status          String // "draft" | "active" | "completed" | "revoked"
+  intent          String   @default("order")
+  authoredOn      DateTime @default(now())
+  occurrenceDate  DateTime?
+
+  // Productos del catálogo agrupados (códigos Fonasa)
+  // En JSON para flexibilidad — fuerte para queries de auditoría
+  examCodes       String // JSON: [{system, code, display}]
+  reasonCode      String // JSON: [{coding, text}] (ICD-10)
+  productNames    String // ej. "Chequeo General + Eco Tiroidea"
+
+  // Relaciones FHIR
+  patient         Patient      @relation(fields: [patientId], references: [id])
+  patientId       String
+  practitioner    Practitioner @relation(fields: [practitionerId], references: [id])
+  practitionerId  String
+
+  // Firma electrónica simple (FES) — Ley 19.799
+  signedAt        DateTime?
+  signatureHash   String? // HMAC-SHA256 del payload
+  verificationUrl String?
+  qrCodeData      String?
+
+  // Pago
+  payment         Payment?
+
+  // Trazabilidad (Ley 21.719 — responsabilidad proactiva)
+  auditLog        AuditLog[]
+  pdfUrl          String?
+  emailSentAt     DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([practitionerId])
+  @@index([status])
+  @@index([authoredOn])
+}
+
+// =================================================================
+// Payment — Transbank Webpay Plus
+// =================================================================
+model Payment {
+  id              String         @id @default(cuid())
+  serviceRequest  ServiceRequest @relation(fields: [serviceRequestId], references: [id])
+  serviceRequestId String        @unique
+  provider        String         @default("webpay-plus")
+  amountCLP       Int
+  currency        String         @default("CLP")
+  status          String // "pending" | "authorized" | "captured" | "failed" | "refunded"
+  transbankToken  String? // Token de Webpay
+  transbankOrderId String? // buy_order
+  authorizationCode String?
+  cardLast4       String?
+  cardType        String? // "Visa" | "Mastercard" | "Amex" | "Redcompra"
+  paidAt          DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+// =================================================================
+// Consent — Consentimiento informado digital (Ley 20.584)
+// =================================================================
+model Consent {
+  id          String   @id @default(cuid())
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  patientId   String
+  scope       String // "data-processing" | "telemedicine" | "marketing-optin"
+  acceptedAt  DateTime @default(now())
+  ipAddress   String
+  userAgent   String
+  version     String   @default("1.0.0") // Versión del texto legal aceptado
+
+  @@index([patientId])
+}
+
+// =================================================================
+// ClinicalNote — anamnesis del paciente (cifrado en prod)
+// =================================================================
+model ClinicalNote {
+  id          String   @id @default(cuid())
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  patientId   String
+  content     String // CIFRADO en producción (pgcrypto AES-256)
+  authoredAt  DateTime @default(now())
+
+  @@index([patientId])
+}
+
+// =================================================================
+// AuditLog — trazabilidad obligatoria por Ley 21.719
+// =================================================================
+// Logs inmutables de toda acción sobre datos clínicos.
+// Acceso, modificación, exportación, eliminación.
+model AuditLog {
+  id              String          @id @default(cuid())
+  serviceRequest  ServiceRequest? @relation(fields: [serviceRequestId], references: [id])
+  serviceRequestId String?
+  action          String // "create" | "read" | "update" | "sign" | "send-email" | "export"
+  actorType       String // "patient" | "practitioner" | "system" | "admin"
+  actorId         String?
+  metadata        String? // JSON con detalles adicionales
+  ipAddress       String?
+  userAgent       String?
+  timestamp       DateTime        @default(now())
+
+  @@index([serviceRequestId])
+  @@index([timestamp])
+  @@index([action])
+}
