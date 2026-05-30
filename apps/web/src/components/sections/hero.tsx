@@ -83,10 +83,10 @@ export function Hero() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="flex justify-center mb-12"
+          className="flex justify-center mb-8 sm:mb-12 px-2"
         >
-          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full glass-elevated">
-            <span className="relative flex h-2 w-2">
+          <div className="inline-flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 rounded-full glass-elevated max-w-full">
+            <span className="relative flex h-2 w-2 shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-success opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-status-success" />
             </span>
@@ -97,7 +97,7 @@ export function Hero() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.4 }}
-                className="text-xs sm:text-sm text-fg-secondary"
+                className="text-[11px] sm:text-sm text-fg-secondary truncate"
               >
                 <span className="font-semibold text-fg-primary">{activity.name}</span>{" "}
                 de {activity.city}{" "}
@@ -143,21 +143,17 @@ export function Hero() {
             className="mt-12 max-w-2xl mx-auto relative"
           >
             <div className="relative">
-              <Search className="absolute left-6 top-1/2 -translate-y-1/2 size-5 text-fg-muted" />
+              <Search className="absolute left-5 sm:left-6 top-1/2 -translate-y-1/2 size-5 text-fg-muted" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Busca tu examen…  ej: Hemograma, VIH, Tiroides"
-                className="w-full h-16 pl-16 pr-32 rounded-full glass-elevated text-lg outline-none border-2 border-transparent focus:border-brand-primary/40 transition-all shadow-lg"
+                placeholder="Busca tu examen…"
+                className="w-full h-14 sm:h-16 pl-14 sm:pl-16 pr-16 sm:pr-32 rounded-full glass-elevated text-base sm:text-lg outline-none border-2 border-transparent focus:border-brand-primary/40 transition-all shadow-lg"
               />
-              <Link href="/catalogo">
-                <Button
-                  variant="primary"
-                  size="md"
-                  className="absolute right-2 top-1/2 -translate-y-1/2"
-                >
-                  Ver todos
+              <Link href="/catalogo" className="absolute right-2 top-1/2 -translate-y-1/2">
+                <Button variant="primary" size="md" className="!px-4 sm:!px-6">
+                  <span className="hidden sm:inline">Ver todos</span>
                   <ArrowRight />
                 </Button>
               </Link>
@@ -218,7 +214,7 @@ export function Hero() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.6 }}
-            className="mt-16 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-sm"
+            className="mt-12 sm:mt-16 flex flex-wrap items-center justify-center gap-x-5 sm:gap-x-10 gap-y-3 text-xs sm:text-sm"
           >
             <TrustBadge icon={Clock} text="Entrega en <10 min" />
             <TrustBadge icon={ShieldCheck} text="Médicos colegiados (RNPI)" />
